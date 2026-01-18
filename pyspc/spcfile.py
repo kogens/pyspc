@@ -59,7 +59,7 @@ SPC_HEADER_FIELDS: list[tuple[str, str]] = [
 
 SPC_SUBHEADER_FIELDS: list[tuple[str, str]] = [
     ("flags", "B"),
-    ("exponent", "b"), 
+    ("exponent", "b"),
     ("subfile_index", "H"),
     ("z_value", "f"),
     ("z_next", "f"),
@@ -107,10 +107,10 @@ class SPCFile:
                 raise ValueError(f"Unsupported SPC version: {self.header['version']:02X}")
 
             # Read X axis
-            self.x = self._read_x_axis(f)
+            self._x = self._read_x_axis(f)
 
             # Read all Y data and subheaders
-            self.y, self.subheaders = self._read_all_subfiles(f)
+            self._y, self.subheaders = self._read_all_subfiles(f)
 
             # Read log block
             self.log = self._read_log_block(f)
@@ -120,15 +120,59 @@ class SPCFile:
         """Filesystem path of the underlying SPC file."""
         return self._path
 
+    @property
+    def has_shared_x(self) -> bool:
+        """True if all subfiles share a common X axis.
+
+        False for TXYXYS files where each subfile has its own X array.
+        """
+        flags = self.header["flags"]
+        return not (flags & FLAG_PER_SUBFILE_XY)
+
+    @property
+    def x(self) -> np.ndarray:
+        """X coordinates (only for files with shared X axis).
+
+        Returns:
+            1D array of X coordinates shared across all subfiles.
+
+        Raises:
+            ValueError: For TXYXYS files with per-subfile X arrays.
+                        Use spc[i].x to access individual X arrays.
+        """
+        if not self.has_shared_x:
+            raise ValueError(
+                "This SPC file has per-subfile X arrays (TXYXYS mode). Use spc[i].x to access X for each spectrum."
+            )
+        return self._x
+
+    @property
+    def y(self) -> np.ndarray:
+        """Y values (only for files with shared X axis).
+
+        Returns:
+            1D array for single spectrum.
+            2D array [n_points, n_subfiles] for multifile.
+
+        Raises:
+            ValueError: For TXYXYS files with varying lengths.
+                        Use spc[i].y to access individual Y arrays.
+        """
+        if not self.has_shared_x:
+            raise ValueError(
+                "This SPC file has per-subfile XY arrays (TXYXYS mode). Use spc[i].y to access Y for each spectrum."
+            )
+        return self._y
+
     def __len__(self) -> int:
         """Number of subfiles (spectra) in the file."""
         return len(self.subheaders)
 
     def __getitem__(self, index: int) -> SPCSubfile:
         """Get k-th spectrum as an SPCSubfile."""
-        y_data = self.y[:, index] if self.y.ndim == 2 else self.y
+        y_data = self._y[:, index] if self._y.ndim == 2 else self._y
         z_value = self.subheaders[index].get("z_value")
-        return SPCSubfile(x=self.x, y=y_data, z=z_value, subheader=self.subheaders[index])
+        return SPCSubfile(x=self._x, y=y_data, z=z_value, subheader=self.subheaders[index])
 
     def __iter__(self) -> Iterable[SPCSubfile]:
         """Iterate over all subfiles."""
@@ -190,7 +234,7 @@ class SPCFile:
 
         # Position file pointer after main header and optional explicit global X
         f.seek(SPC_HEADER_SIZE)
-        if flags & FLAG_EXPLICIT_X and not (flags & FLAG_PER_SUBFILE_XY):            
+        if flags & FLAG_EXPLICIT_X and not (flags & FLAG_PER_SUBFILE_XY):
             f.seek(n_points * 4, 1)  # Skip explicit global X array
 
         # Read all subfiles
@@ -260,7 +304,7 @@ class SPCFile:
             y_data = y_raw.astype(np.float64) * scale
 
         return y_data
-    
+
     def _read_log_block(self, f) -> str | None:
         """Read the log block if present."""
         log_offset = self.header.get("log_offset", 0)
@@ -272,21 +316,21 @@ class SPCFile:
         logstc_buffer = f.read(64)
         if len(logstc_buffer) < 64:
             return None
-        
+
         # Parse LOGSTC structure (5 integers)
         logsize, _, txt_offset, binary_size, logdsks = struct.unpack("<IIIII", logstc_buffer[:20])
         # Remaining 44 bytes are reserved/spare
-        
+
         # Read remaining log block data (we already read first 64 bytes)
         remaining_data = f.read(logsize - 64)
         log_data = logstc_buffer + remaining_data
-        
+
         # Extract text starting at text offset
         if txt_offset >= len(log_data):
             return None
-            
+
         text_data = log_data[txt_offset:]
-        
+
         # Decode log text up to the first null byte
         # Log text is ASCII with CR+LF line endings, terminated by \0
         log_text = text_data.split(b"\x00")[0].decode("latin-1", errors="replace")
