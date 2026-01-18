@@ -12,3 +12,7 @@ dependencies = ["numpy"]
 
 [tool.setuptools]
 packages = ["pyspc"]
+
+# Define Ruff to use 120 character line length
+[tool.ruff]
+line-length = 120

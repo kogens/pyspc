@@ -6,7 +6,8 @@ from typing import Iterable
 
 import numpy as np
 
-from .parser import read_header
+from .parser import read_all_subheaders, read_header
+
 
 @dataclass
 class SPCSubfile:
@@ -28,6 +29,13 @@ class SPCFile:
         with self._path.open("rb") as f:
             self.header = read_header(f)
 
+        if self.header['version'] != 0x4B:
+            raise ValueError(f"Unsupported SPC version: {self.header['version']:02X}")
+        
+        # Read all subheaders using parser
+        with self._path.open("rb") as f:
+            self._raw_subheaders = read_all_subheaders(f, self.header)
+        
         # Temporary stub data so tests can exercise the public API
         self._subfiles: list[SPCSubfile] = [
             SPCSubfile(x=np.array([], dtype=float), y=np.array([], dtype=float))
