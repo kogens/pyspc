@@ -22,6 +22,7 @@ FLAG_EXPLICIT_X = 0x80  # X values stored explicitly as float array(s)
 SPC_HEADER_SIZE = 512
 SPC_SUBHEADER_SIZE = 32
 
+# Define the main header and subheader fields and their struct formats for parsing
 SPC_HEADER_FIELDS: list[tuple[str, str]] = [
     ("flags", "B"),
     ("version", "B"),
@@ -58,7 +59,7 @@ SPC_HEADER_FIELDS: list[tuple[str, str]] = [
 
 SPC_SUBHEADER_FIELDS: list[tuple[str, str]] = [
     ("flags", "B"),
-    ("exponent", "b"),
+    ("exponent", "b"), 
     ("subfile_index", "H"),
     ("z_value", "f"),
     ("z_next", "f"),
@@ -110,6 +111,9 @@ class SPCFile:
 
             # Read all Y data and subheaders
             self.y, self.subheaders = self._read_all_subfiles(f)
+
+            # Read log block
+            self.log = self._read_log_block(f)
 
     @property
     def path(self) -> Path:
@@ -184,10 +188,10 @@ class SPCFile:
         n_subfiles = self.header["n_subfiles"]
         is_16bit_y = bool(flags & FLAG_Y_16BIT)
 
-        # Position file pointer after main header and optional global X
+        # Position file pointer after main header and optional explicit global X
         f.seek(SPC_HEADER_SIZE)
-        if flags & FLAG_EXPLICIT_X and not (flags & FLAG_PER_SUBFILE_XY):
-            f.seek(n_points * 4, 1)  # Skip global X array
+        if flags & FLAG_EXPLICIT_X and not (flags & FLAG_PER_SUBFILE_XY):            
+            f.seek(n_points * 4, 1)  # Skip explicit global X array
 
         # Read all subfiles
         subheaders = []
@@ -228,6 +232,8 @@ class SPCFile:
             size = struct.calcsize(fmt)
             values = struct.unpack_from(fmt, buffer, offset)
             value = values[0] if len(values) == 1 else values
+            if isinstance(value, bytes):
+                value = value.decode("latin-1", errors="replace").strip()
             subheader[field_name] = value
             offset += size
 
@@ -244,6 +250,7 @@ class SPCFile:
         # Decode to float
         if exponent == -128:  # 0x80 = floating point
             if is_16bit:
+                # Check for invalid combination
                 raise ValueError("Cannot have 16-bit Y with float exponent")
             y_data = y_raw.view("<f4").astype(np.float64)
         else:
@@ -253,3 +260,34 @@ class SPCFile:
             y_data = y_raw.astype(np.float64) * scale
 
         return y_data
+    
+    def _read_log_block(self, f) -> str | None:
+        """Read the log block if present."""
+        log_offset = self.header.get("log_offset", 0)
+        if log_offset == 0:
+            return None
+
+        # Read LOGSTC header (64 bytes)
+        f.seek(log_offset)
+        logstc_buffer = f.read(64)
+        if len(logstc_buffer) < 64:
+            return None
+        
+        # Parse LOGSTC structure (5 integers)
+        logsize, _, txt_offset, binary_size, logdsks = struct.unpack("<IIIII", logstc_buffer[:20])
+        # Remaining 44 bytes are reserved/spare
+        
+        # Read remaining log block data (we already read first 64 bytes)
+        remaining_data = f.read(logsize - 64)
+        log_data = logstc_buffer + remaining_data
+        
+        # Extract text starting at text offset
+        if txt_offset >= len(log_data):
+            return None
+            
+        text_data = log_data[txt_offset:]
+        
+        # Decode log text up to the first null byte
+        # Log text is ASCII with CR+LF line endings, terminated by \0
+        log_text = text_data.split(b"\x00")[0].decode("latin-1", errors="replace")
+        return log_text
