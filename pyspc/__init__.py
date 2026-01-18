@@ -1,4 +1,3 @@
-from .spcfile import SPCFile
-from .structures import SPCSubfile
+from .spcfile import SPCFile, SPCSubfile
 
 __all__ = ["SPCFile", "SPCSubfile"]
