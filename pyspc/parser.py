@@ -1,5 +1,9 @@
+"""Low-level binary parsing for SPC files."""
+
 import struct
 from typing import BinaryIO
+
+import numpy as np
 
 SPC_HEADER_SIZE = 512
 SPC_SUBHEADER_SIZE = 32
@@ -131,57 +135,184 @@ def read_subheader(f: BinaryIO, offset: int) -> dict[str, object]:
     return subheader
 
 
-def read_all_subheaders(f: BinaryIO, header: dict[str, object]) -> list[dict[str, object]]:
-    """Read all subfile headers from an SPC file.
+def read_x_array(
+    f: BinaryIO,
+    n_points: int,
+    flags: int,
+    has_global_x: bool,
+    global_x: np.ndarray | None,
+    first_x: float,
+    last_x: float,
+) -> np.ndarray:
+    """Read X coordinate array for a subfile.
+
+    Args:
+        f: Open binary file at the correct position
+        n_points: Number of points to read
+        flags: Main header flags
+        has_global_x: Whether a global X array was already read
+        global_x: The global X array if present
+        first_x: First X value from main header (for evenly spaced)
+        last_x: Last X value from main header (for evenly spaced)
+
+    Returns:
+        numpy array of X coordinates
+    """
+    if flags & FLAG_PER_SUBFILE_XY:
+        # Read per-subfile X array
+        return np.frombuffer(f.read(n_points * 4), dtype="<f4")
+    elif has_global_x:
+        # Use global X array
+        return global_x
+    else:
+        # Evenly spaced X - compute from header
+        return np.linspace(first_x, last_x, n_points)
+
+
+def read_y_array(
+    f: BinaryIO,
+    n_points: int,
+    y_exponent: int,
+    is_16bit: bool,
+) -> np.ndarray:
+    """Read and decode Y value array for a subfile.
+
+    Args:
+        f: Open binary file at the correct position
+        n_points: Number of points to read
+        y_exponent: Exponent for fixed-point scaling (or -128 for float)
+        is_16bit: Whether Y values are 16-bit (else 32-bit)
+
+    Returns:
+        numpy array of Y values as float64
+    """
+    # Read raw Y data
+    if is_16bit:
+        y_raw = np.frombuffer(f.read(n_points * 2), dtype="<i2")
+    else:
+        y_raw = np.frombuffer(f.read(n_points * 4), dtype="<i4")
+
+    # Convert Y to float
+    if y_exponent == -128:  # 0x80 = floating point Y
+        # Re-interpret raw bytes as float32
+        if is_16bit:
+            raise ValueError("Cannot have 16-bit Y with float exponent")
+        y_data = y_raw.view("<f4").astype(np.float64)
+    else:
+        # Fixed-point conversion
+        bit_width = 16 if is_16bit else 32
+        scale = 2.0**y_exponent / (2.0**bit_width)
+        y_data = y_raw.astype(np.float64) * scale
+
+    return y_data
+
+
+def read_subfile(
+    f: BinaryIO,
+    main_header: dict[str, object],
+    global_x: np.ndarray | None,
+    has_global_x: bool,
+    is_16bit_y: bool,
+) -> dict[str, object]:
+    """Read one complete subfile (header + X + Y data).
+
+    Args:
+        f: Open binary file positioned at the start of a subfile header
+        main_header: Parsed main header
+        global_x: Global X array if present, else None
+        has_global_x: Whether global X array exists
+        is_16bit_y: Whether Y values are 16-bit
+
+    Returns:
+        Dict with 'header', 'x', and 'y' keys
+    """
+    flags = main_header["flags"]
+    n_points = main_header["n_points"]
+    exponent = main_header["exponent"]
+
+    # Read and parse subheader
+    subhdr_buffer = f.read(SPC_SUBHEADER_SIZE)
+    if len(subhdr_buffer) < SPC_SUBHEADER_SIZE:
+        raise ValueError(
+            f"Could not read full subheader, got {len(subhdr_buffer)} bytes"
+        )
+
+    subheader: dict[str, object] = {}
+    offset = 0
+    for field_name, fmt in SPC_SUBHEADER_FIELDS:
+        size = struct.calcsize(fmt)
+        values = struct.unpack_from(fmt, subhdr_buffer, offset)
+        value = values[0] if len(values) == 1 else values
+        subheader[field_name] = value
+        offset += size
+
+    # Determine number of points for this subfile
+    if flags & FLAG_PER_SUBFILE_XY:
+        points_in_subfile = subheader["n_points"]
+    else:
+        points_in_subfile = n_points
+
+    # Read X array
+    x_data = read_x_array(
+        f,
+        points_in_subfile,
+        flags,
+        has_global_x,
+        global_x,
+        main_header["first_x"],
+        main_header["last_x"],
+    )
+
+    # Determine Y exponent for this subfile
+    sub_exponent = subheader["exponent"]
+    if flags & FLAG_MULTIFILE:
+        y_exponent = sub_exponent
+    else:
+        y_exponent = exponent
+
+    # Read Y array
+    y_data = read_y_array(f, points_in_subfile, y_exponent, is_16bit_y)
+
+    return {"header": subheader, "x": x_data, "y": y_data}
+
+
+def read_all_subfiles(
+    f: BinaryIO, header: dict[str, object]
+) -> list[dict[str, object]]:
+    """Read all complete subfiles (header + X/Y data) from an SPC file.
 
     Args:
         f: Open binary file positioned at start (will seek as needed)
         header: Parsed main header dict from read_header()
 
     Returns:
-        List of subheader dicts in file order
+        List of subfile dicts, each containing:
+        - 'header': subheader dict
+        - 'x': numpy array of X values
+        - 'y': numpy array of Y values
 
-    Calculates file offsets sequentially based on file layout:
-    - Start after 512-byte main header
-    - Skip global X array if FLAG_EXPLICIT_X set (but not FLAG_PER_SUBFILE_XY)
-    - For each subfile: read SUBHDR, then skip X (if FLAG_PER_SUBFILE_XY) and Y data
+    Reads each subfile completely in a single sequential pass through the file.
     """
-    subheaders: list[dict[str, object]] = []
-
     flags = header["flags"]
     n_points = header["n_points"]
     n_subfiles = header["n_subfiles"]
 
     # Start after main header
-    current_offset = SPC_HEADER_SIZE
+    f.seek(SPC_HEADER_SIZE)
 
-    # Skip global X array if present (FLAG_EXPLICIT_X set, FLAG_PER_SUBFILE_XY clear)
+    # Read global X array if present (FLAG_EXPLICIT_X set, FLAG_PER_SUBFILE_XY clear)
+    global_x = None
     has_global_x = (flags & FLAG_EXPLICIT_X) and not (flags & FLAG_PER_SUBFILE_XY)
     if has_global_x:
-        current_offset += n_points * 4  # 4 bytes per float32
+        global_x = np.frombuffer(f.read(n_points * 4), dtype="<f4")
 
-    # Calculate Y data size per subfile
-    # FLAG_Y_16BIT set = 16-bit Y, clear = 32-bit Y
-    y_bytes_per_point = 2 if (flags & FLAG_Y_16BIT) else 4
+    # Determine Y storage format
+    is_16bit_y = bool(flags & FLAG_Y_16BIT)
 
-    # Read each subheader
+    # Read each complete subfile
+    subfiles: list[dict[str, object]] = []
     for i in range(n_subfiles):
-        subheader = read_subheader(f, current_offset)
-        subheaders.append(subheader)
+        subfile = read_subfile(f, header, global_x, has_global_x, is_16bit_y)
+        subfiles.append(subfile)
 
-        # Advance offset past this subheader
-        current_offset += SPC_SUBHEADER_SIZE
-
-        # For FLAG_PER_SUBFILE_XY mode, each subfile has its own X array and point count
-        if flags & FLAG_PER_SUBFILE_XY:
-            points_in_subfile = subheader["n_points"]
-            # Skip X array for this subfile
-            current_offset += points_in_subfile * 4  # X array
-            # Skip Y array for this subfile
-            current_offset += points_in_subfile * y_bytes_per_point
-        else:
-            # All subfiles share the same point count
-            # Skip Y data for this subfile
-            current_offset += n_points * y_bytes_per_point
-
-    return subheaders
+    return subfiles

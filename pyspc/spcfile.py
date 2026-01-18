@@ -1,20 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 import numpy as np
 
-from .parser import read_all_subheaders, read_header
-
-
-@dataclass
-class SPCSubfile:
-    """Single subfile (spectrum) in an SPC file."""
-
-    x: np.ndarray
-    y: np.ndarray
+from .parser import read_all_subfiles, read_header
+from .structures import SPCSubfile
 
 
 class SPCFile:
@@ -25,20 +17,21 @@ class SPCFile:
 
         if not self._path.is_file():
             raise FileNotFoundError(self._path)
-        
+
         with self._path.open("rb") as f:
             self.header = read_header(f)
 
-        if self.header['version'] != 0x4B:
+        if self.header["version"] != 0x4B:
             raise ValueError(f"Unsupported SPC version: {self.header['version']:02X}")
-        
-        # Read all subheaders using parser
+
+        # Read all complete subfiles (header + X/Y data) using parser
         with self._path.open("rb") as f:
-            self._raw_subheaders = read_all_subheaders(f, self.header)
-        
-        # Temporary stub data so tests can exercise the public API
+            raw_subfiles = read_all_subfiles(f, self.header)
+
+        # Convert raw subfiles to SPCSubfile objects using classmethod
         self._subfiles: list[SPCSubfile] = [
-            SPCSubfile(x=np.array([], dtype=float), y=np.array([], dtype=float))
+            SPCSubfile.from_raw(x=sf["x"], y=sf["y"], header=sf["header"])
+            for sf in raw_subfiles
         ]
 
     @property
