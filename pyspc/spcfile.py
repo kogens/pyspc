@@ -106,6 +106,9 @@ class SPCFile:
             if self.header["version"] != 0x4B:
                 raise ValueError(f"Unsupported SPC version: {self.header['version']:02X}")
 
+            if self.header.get("w_planes", 0) != 0:
+                raise NotImplementedError("4D W-plane data is not supported yet")
+
             # Read X axis
             self._x = self._read_x_axis(f)
 

@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from pyspc import SPCFile, SPCSubfile
+from pyspc.spcfile import FLAG_EXPLICIT_X
 
 
 @pytest.fixture(scope="session")
@@ -20,12 +21,17 @@ class TestSPCFileConstruction:
         assert isinstance(spc, SPCFile)
         assert spc.path == data_dir / filename
 
-    @pytest.mark.parametrize("filename", ["m_evenz.spc", "nir.spc", "4d_map.spc"])
+    @pytest.mark.parametrize("filename", ["m_evenz.spc", "nir.spc"])
     def test_load_multifile(self, data_dir: Path, filename: str) -> None:
         """Load multifile spectra."""
         spc = SPCFile(data_dir / filename)
         assert isinstance(spc, SPCFile)
         assert len(spc) > 1
+
+    def test_4d_file_not_supported(self, data_dir: Path) -> None:
+        """Raise NotImplementedError for 4D W-plane files until supported."""
+        with pytest.raises(NotImplementedError):
+            SPCFile(data_dir / "4d_map.spc")
 
     def test_nonexistent_file(self) -> None:
         """Raise FileNotFoundError for missing files."""
@@ -81,6 +87,26 @@ class TestSharedXMode:
 
         assert multi_spc.x.shape == (171,)
         assert multi_spc.y.shape == (171, 32)
+
+
+class TestXModeBehavior:
+    """Test explicit vs implicit X handling."""
+
+    def test_implicit_evenly_spaced_x(self, data_dir: Path) -> None:
+        """Implicit X files rely on the header endpoints/linspace."""
+        spc = SPCFile(data_dir / "s_evenx.spc")
+        assert not (spc.header["flags"] & FLAG_EXPLICIT_X)
+
+        expected = np.linspace(spc.header["first_x"], spc.header["last_x"], spc.header["n_points"])
+        assert np.allclose(spc.x, expected, rtol=1e-6, atol=0.0)
+
+    def test_explicit_x_overrides_linspace(self, data_dir: Path) -> None:
+        """Explicit global X arrays should differ from implied linspace."""
+        spc = SPCFile(data_dir / "s_xy.spc")
+        assert spc.header["flags"] & FLAG_EXPLICIT_X
+
+        expected = np.linspace(spc.header["first_x"], spc.header["last_x"], spc.header["n_points"])
+        assert not np.allclose(spc.x, expected, rtol=1e-6, atol=0.0)
 
 
 class TestSPCFileIndexing:
@@ -153,6 +179,14 @@ class TestLogText:
         assert len(ftir_spc.log) > 0
         assert ("MODEL" in ftir_spc.log) or ("SCANS" in ftir_spc.log)
         assert ("\r\n" in ftir_spc.log) or ("\n" in ftir_spc.log)
+
+    def test_log_header_skipped(self, ftir_spc: SPCFile) -> None:
+        """Log text should start with human-readable records, not binary header."""
+        assert ftir_spc.log is not None
+        text = ftir_spc.log
+        assert text[0] != "\x00"
+        assert text.startswith("MODEL") 
+        assert len(text)  == 376  # Exact log length for this file
 
     def test_log_absent_or_none(self, data_dir: Path) -> None:
         """Files without log should have None."""
