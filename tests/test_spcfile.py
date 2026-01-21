@@ -30,10 +30,17 @@ class TestSPCFileConstruction:
         assert isinstance(spc, SPCFile)
         assert len(spc) > 1
 
-    def test_4d_file_not_supported(self, data_dir: Path) -> None:
-        """Raise NotImplementedError for 4D W-plane files until supported."""
-        with pytest.raises(NotImplementedError):
-            SPCFile(data_dir / "4d_map.spc")
+    def test_4d_file_minimal_support(self, data_dir: Path) -> None:
+        """4D W-plane files should load and expose minimal W metadata."""
+        spc = SPCFile(data_dir / "4d_map.spc")
+        assert spc.w_planes > 0
+        assert spc.w.shape == (spc.w_planes,)
+        assert np.all(np.isfinite(spc.w))
+
+        # For this sample file, W is evenly spaced.
+        assert spc.w_planes == 11
+        assert len(spc) == 121
+        assert np.allclose(np.diff(spc.w), 10.0)
 
     def test_nonexistent_file(self) -> None:
         """Raise FileNotFoundError for missing files."""

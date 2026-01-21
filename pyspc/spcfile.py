@@ -193,8 +193,8 @@ class SPCFile:
             if self.header["version"] != 0x4B:
                 raise ValueError(f"Unsupported SPC version: {self.header['version']:02X}")
 
-            if self.header.get("w_planes", 0) != 0:
-                raise NotImplementedError("4D W-plane data is not supported yet")
+            if int(self.header.get("w_planes", 0)) < 0:
+                raise ValueError(f"Invalid w_planes: {self.header.get('w_planes')}")
 
             # Read X axis
             self._x = self._read_x_axis(f)
@@ -209,6 +209,39 @@ class SPCFile:
     def flags(self) -> int:
         """Raw main-header flags bitfield (ftflgs)."""
         return int(self.header["flags"])
+
+    @property
+    def w_planes(self) -> int:
+        """Number of W-planes (0 for non-4D files)."""
+        return int(self.header.get("w_planes", 0))
+
+    @property
+    def w(self) -> np.ndarray:
+        """W-plane axis values for 4D files.
+
+        Returns:
+            1D array of length `w_planes`.
+
+        Raises:
+            ValueError: If the file has no W-plane data or the layout is inconsistent.
+        """
+        w_planes = self.w_planes
+        if w_planes == 0:
+            raise ValueError("This SPC file has no W-plane (4D) data")
+
+        n_subfiles = self.header["n_subfiles"]
+        if n_subfiles % w_planes != 0:
+            raise ValueError(f"Invalid 4D layout: n_subfiles={n_subfiles} is not divisible by w_planes={w_planes}")
+
+        z_per_plane = n_subfiles // w_planes
+        w_inc = self.header.get("w_increment", 0.0)
+
+        if w_inc != 0.0:
+            w0 = self.subheaders[0].get("w_value", 0.0)
+            return (w0 + np.arange(w_planes) * w_inc)
+
+        w_vals = [self.subheaders[i * z_per_plane].get("w_value", 0.0) for i in range(w_planes)]
+        return np.array(w_vals)
 
     @property
     def path(self) -> Path:
