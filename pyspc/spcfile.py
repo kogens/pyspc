@@ -10,10 +10,14 @@ from typing import Iterable
 
 import numpy as np
 
+# Constants and lookup tables
+SPC_HEADER_SIZE = 512
+SPC_SUBHEADER_SIZE = 32
+
 # Main header flag bits (ftflgs)
 FLAG_Y_16BIT = 0x01  # Y data is 16-bit if set, 32-bit if clear
 FLAG_CHROMATOGRAM = 0x02  # Enables chromatogram / fexper interpretation
-FLAG_MULTIFILE = 0x04  # Multifile; more than one subfile present
+FLAG_IS_MULTIFILE = 0x04  # Multifile; more than one subfile present
 FLAG_RANDOM_Z = 0x08  # Multifile with arbitrary (unordered) Z values
 FLAG_ORDERED_Z = 0x10  # Multifile with ordered but uneven Z values
 FLAG_CUSTOM_AXIS_LABELS = 0x20  # Use fcatxt axis labels instead of type defaults
@@ -74,7 +78,6 @@ X_UNIT_LABELS: dict[int, str] = {
     255: "No Units",
 }
 
-
 Y_UNIT_LABELS: dict[int, str] = {
     0: "Arbitrary Intensity",
     1: "Interferogram",
@@ -105,9 +108,6 @@ Y_UNIT_LABELS: dict[int, str] = {
     130: "Valley",
     255: "No units",
 }
-
-SPC_HEADER_SIZE = 512
-SPC_SUBHEADER_SIZE = 32
 
 # Define the main header and subheader fields and their struct formats for parsing
 SPC_HEADER_FIELDS: list[tuple[str, str]] = [
@@ -206,6 +206,11 @@ class SPCFile:
             self.log = self._read_log_block(f)
 
     @property
+    def flags(self) -> int:
+        """Raw main-header flags bitfield (ftflgs)."""
+        return int(self.header["flags"])
+
+    @property
     def path(self) -> Path:
         """Filesystem path of the underlying SPC file."""
         return self._path
@@ -245,10 +250,10 @@ class SPCFile:
         """Date and time string from the header. Interpreted as packed int; YYYY(20) MM(4) DD(5)"""
         dt_raw = self.header["date_int"]
         minute = dt_raw & 0x3F
-        hour   = (dt_raw >> 6) & 0x1F
-        day    = (dt_raw >> 11) & 0x1F
-        month  = (dt_raw >> 16) & 0x0F
-        year   = (dt_raw >> 20) & 0xFFF
+        hour = (dt_raw >> 6) & 0x1F
+        day = (dt_raw >> 11) & 0x1F
+        month = (dt_raw >> 16) & 0x0F
+        year = (dt_raw >> 20) & 0xFFF
 
         # Basic validation
         if not ((1 <= month <= 12) and (1 <= day <= 31) and (1900 < year < 2100)):
@@ -262,8 +267,47 @@ class SPCFile:
 
         False for TXYXYS files where each subfile has its own X array.
         """
-        flags = self.header["flags"]
-        return not (flags & FLAG_PER_SUBFILE_XY)
+        return not self.per_subfile_xy
+
+    @property
+    def y_16bit(self) -> bool:
+        """True if Y values are stored as 16-bit words (TSPREC)."""
+        return bool(self.flags & FLAG_Y_16BIT)
+
+    @property
+    def is_chromatogram(self) -> bool:
+        """True if chromatogram semantics are enabled (TCGRAM)."""
+        return bool(self.flags & FLAG_CHROMATOGRAM)
+
+    @property
+    def is_multifile(self) -> bool:
+        """True if the file contains multiple subfiles (TMULTI)."""
+        return bool(self.flags & FLAG_IS_MULTIFILE)
+
+    @property
+    def random_z(self) -> bool:
+        """True if multifile Z values are arbitrary/unordered (TRANDM)."""
+        return bool(self.flags & FLAG_RANDOM_Z)
+
+    @property
+    def ordered_z(self) -> bool:
+        """True if multifile Z values are ordered but uneven (TORDRD)."""
+        return bool(self.flags & FLAG_ORDERED_Z)
+
+    @property
+    def custom_axis_labels(self) -> bool:
+        """True if fcatxt custom axis labels are used (TALABS)."""
+        return bool(self.flags & FLAG_CUSTOM_AXIS_LABELS)
+
+    @property
+    def per_subfile_xy(self) -> bool:
+        """True if each subfile has its own X array/length (TXYXYS)."""
+        return bool(self.flags & FLAG_PER_SUBFILE_XY)
+
+    @property
+    def explicit_x(self) -> bool:
+        """True if X values are stored explicitly as float array(s) (TXVALS)."""
+        return bool(self.flags & FLAG_EXPLICIT_X)
 
     @property
     def x(self) -> np.ndarray:
@@ -317,7 +361,7 @@ class SPCFile:
 
     def __repr__(self) -> str:
         flags = self.header["flags"]
-        parts = ["multifile" if flags & FLAG_MULTIFILE else "single"]
+        parts = ["multifile" if flags & FLAG_IS_MULTIFILE else "single"]
         parts.append("shared-x" if self.has_shared_x else "per-subfile-x")
         if flags & FLAG_EXPLICIT_X:
             parts.append("explicit-x")
@@ -403,7 +447,7 @@ class SPCFile:
             subheaders.append(subheader)
 
             # Determine Y exponent
-            if flags & FLAG_MULTIFILE:
+            if flags & FLAG_IS_MULTIFILE:
                 y_exponent = subheader["exponent"]
             else:
                 y_exponent = self.header["exponent"]

@@ -288,3 +288,77 @@ class TestDateField:
     def test_date_known_values(self, data_dir: Path, filename: str, expected: datetime) -> None:
         spc = SPCFile(data_dir / filename)
         assert spc.date == expected
+
+
+class TestHeaderFlagProperties:
+    """Test convenience boolean properties for ftflgs bits."""
+
+    @pytest.mark.parametrize(
+        ("filename", "expected"),
+        [
+            (
+                "s_evenx.spc",
+                {
+                    "y_16bit": False,
+                    "chromatogram": False,
+                    "multifile": False,
+                    "random_z": False,
+                    "ordered_z": False,
+                    "custom_axis_labels": False,
+                    "per_subfile_xy": False,
+                    "explicit_x": False,
+                },
+            ),
+            (
+                "s_xy.spc",
+                {
+                    "y_16bit": False,
+                    "chromatogram": False,
+                    "multifile": False,
+                    "random_z": False,
+                    "ordered_z": False,
+                    "custom_axis_labels": False,
+                    "per_subfile_xy": False,
+                    "explicit_x": True,
+                },
+            ),
+            (
+                "m_evenz.spc",
+                {
+                    "y_16bit": False,
+                    "chromatogram": False,
+                    "multifile": True,
+                    "random_z": False,
+                    "ordered_z": False,
+                    "custom_axis_labels": False,
+                    "per_subfile_xy": False,
+                    "explicit_x": False,
+                },
+            ),
+            (
+                "ms.spc",
+                {
+                    "y_16bit": True,
+                    "chromatogram": False,
+                    "multifile": False,
+                    "random_z": False,
+                    "ordered_z": False,
+                    "custom_axis_labels": True,
+                    "per_subfile_xy": True,
+                    "explicit_x": True,
+                },
+            ),
+        ],
+    )
+    def test_flag_properties_match_known_files(self, data_dir: Path, filename: str, expected: dict[str, bool]) -> None:
+        spc = SPCFile(data_dir / filename)
+
+        assert spc.flags == int(spc.header["flags"])
+        assert spc.y_16bit is expected["y_16bit"]
+        assert spc.is_chromatogram is expected["chromatogram"]
+        assert spc.is_multifile is expected["multifile"]
+        assert spc.random_z is expected["random_z"]
+        assert spc.ordered_z is expected["ordered_z"]
+        assert spc.custom_axis_labels is expected["custom_axis_labels"]
+        assert spc.per_subfile_xy is expected["per_subfile_xy"]
+        assert spc.explicit_x is expected["explicit_x"]
