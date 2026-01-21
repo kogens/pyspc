@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass
+import datetime
 from pathlib import Path
 from typing import Iterable
 
@@ -122,7 +123,7 @@ SPC_HEADER_FIELDS: list[tuple[str, str]] = [
     ("y_unit_code", "B"),
     ("z_unit_code", "B"),
     ("posting_disposition", "B"),
-    ("date_time_raw", "I"),
+    ("date_int", "I"),
     ("resolution_str", "9s"),
     ("source_str", "9s"),
     ("peak_point_index", "H"),
@@ -240,6 +241,22 @@ class SPCFile:
         return self._map_code(self.header["w_unit_code"], X_UNIT_LABELS)
 
     @property
+    def date(self) -> datetime.datetime | None:
+        """Date and time string from the header. Interpreted as packed int; YYYY(20) MM(4) DD(5)"""
+        dt_raw = self.header["date_int"]
+        minute = dt_raw & 0x3F
+        hour   = (dt_raw >> 6) & 0x1F
+        day    = (dt_raw >> 11) & 0x1F
+        month  = (dt_raw >> 16) & 0x0F
+        year   = (dt_raw >> 20) & 0xFFF
+
+        # Basic validation
+        if not ((1 <= month <= 12) and (1 <= day <= 31) and (1900 < year < 2100)):
+            return None
+
+        return datetime.datetime(year, month, day, hour, minute)
+
+    @property
     def has_shared_x(self) -> bool:
         """True if all subfiles share a common X axis.
 
@@ -311,6 +328,7 @@ class SPCFile:
     def __str__(self) -> str:
         lines = [
             f"SPC File: {self._path}",
+            f"Date: {self.date}",
             f"Subfiles: {len(self)}",
             f"Points per subfile: {self.header['n_points']}",
             f"Experiment type: {self.experiment}",

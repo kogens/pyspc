@@ -1,4 +1,6 @@
+from datetime import datetime
 from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -185,8 +187,8 @@ class TestLogText:
         assert ftir_spc.log is not None
         text = ftir_spc.log
         assert text[0] != "\x00"
-        assert text.startswith("MODEL") 
-        assert len(text)  == 376  # Exact log length for this file
+        assert text.startswith("MODEL")
+        assert len(text) == 376  # Exact log length for this file
 
     def test_log_absent_or_none(self, data_dir: Path) -> None:
         """Files without log should have None."""
@@ -217,3 +219,72 @@ class TestKnownFileProperties:
         assert spc.y.shape == (171, 32)
         assert pytest.approx(spc.x.min(), rel=1e-2) == 200.0
         assert pytest.approx(spc.x.max(), rel=1e-2) == 800.0
+
+
+class TestUnitLabels:
+    """Test human-readable unit label properties."""
+
+    def test_unit_labels_single_spectrum(self, data_dir: Path) -> None:
+        spc = SPCFile(data_dir / "s_evenx.spc")
+        assert spc.x_unit == "Wavenumber (cm^-1)"
+        assert spc.y_unit == "Absorbance (AU)"
+        assert spc.z_unit == "Arbitrary"
+        assert spc.w_unit == "Arbitrary"
+
+    def test_unit_labels_explicit_x_file(self, data_dir: Path) -> None:
+        spc = SPCFile(data_dir / "s_xy.spc")
+        assert spc.x_unit == "Time (min)"
+        assert spc.y_unit == "Arbitrary Intensity"
+
+    def test_unit_labels_multifile(self, data_dir: Path) -> None:
+        spc = SPCFile(data_dir / "m_evenz.spc")
+        assert spc.x_unit == "Wavelength (nm)"
+        assert spc.y_unit == "Absorbance (AU)"
+        assert spc.z_unit == "Time (min)"
+
+    def test_unit_labels_ftir(self, data_dir: Path) -> None:
+        spc = SPCFile(data_dir / "ft-ir.spc")
+        assert spc.x_unit == "Wavenumber (cm^-1)"
+        assert spc.y_unit == "Transmittance"
+
+    def test_unit_labels_mass_spec(self, data_dir: Path) -> None:
+        spc = SPCFile(data_dir / "ms.spc")
+        assert spc.x_unit == "Mass (m/z)"
+
+
+class TestExperimentLabels:
+    """Test human-readable experiment type label property."""
+
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            "s_evenx.spc",
+            "s_xy.spc",
+            "m_evenz.spc",
+            "ft-ir.spc",
+            "ms.spc",
+        ],
+    )
+    def test_experiment_label(self, data_dir: Path, filename: str) -> None:
+        spc = SPCFile(data_dir / filename)
+        assert spc.experiment == "General"
+
+
+class TestDateField:
+    """Test parsing of the packed date/time field."""
+
+    @pytest.mark.parametrize("filename", ["s_evenx.spc", "ms.spc"])
+    def test_date_none_for_missing_or_invalid(self, data_dir: Path, filename: str) -> None:
+        spc = SPCFile(data_dir / filename)
+        assert spc.date is None
+
+    @pytest.mark.parametrize(
+        ("filename", "expected"),
+        [
+            ("s_xy.spc", datetime(1986, 1, 9, 8, 47)),
+            ("ft-ir.spc", datetime(1995, 4, 18, 9, 20)),
+        ],
+    )
+    def test_date_known_values(self, data_dir: Path, filename: str, expected: datetime) -> None:
+        spc = SPCFile(data_dir / filename)
+        assert spc.date == expected
