@@ -182,6 +182,30 @@ class SPCFile:
         for i in range(len(self)):
             yield self[i]
 
+    def __repr__(self) -> str:
+        flags = self.header["flags"]
+        parts = ["multifile" if flags & FLAG_MULTIFILE else "single"]
+        parts.append("shared-x" if self.has_shared_x else "per-subfile-x")
+        if flags & FLAG_EXPLICIT_X:
+            parts.append("explicit-x")
+        flags = "|".join(parts)
+
+        return (
+            f"<SPCFile path={self._path!r} n_subfiles={len(self)} "
+            f"n_points={self.header['n_points']} flags={flags}>"
+        )
+
+    def __str__(self) -> str:
+        lines = [
+            f"SPC File: {self._path}",
+            f"Subfiles: {len(self)}",
+            f"Points per subfile: {self.header['n_points']}",
+            f"Experiment type: {self.header['experiment_type']}",
+            f"X unit code: {self.header['x_unit_code']}",
+            f"Y unit code: {self.header['y_unit_code']}",
+        ]
+        return "\n".join(lines)
+
     def _read_header(self, f) -> dict[str, object]:
         """Read and parse the 512-byte main header."""
         f.seek(0)
