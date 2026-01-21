@@ -332,10 +332,7 @@ class SPCFile:
             f"Subfiles: {len(self)}",
             f"Points per subfile: {self.header['n_points']}",
             f"Experiment type: {self.experiment}",
-            f"X unit: {self.x_unit}",
-            f"Y unit: {self.y_unit}",
-            f"Z unit: {self.z_unit}",
-            f"W unit: {self.w_unit}",
+            f"Units: X='{self.x_unit}', Y='{self.y_unit}', Z='{self.z_unit}', W='{self.w_unit}'",
         ]
         return "\n".join(lines)
 
