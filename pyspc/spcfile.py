@@ -19,6 +19,92 @@ FLAG_CUSTOM_AXIS_LABELS = 0x20  # Use fcatxt axis labels instead of type default
 FLAG_PER_SUBFILE_XY = 0x40  # Per-subfile X arrays and lengths (TXYXYS mode)
 FLAG_EXPLICIT_X = 0x80  # X values stored explicitly as float array(s)
 
+
+SPC_EXPERIMENT_TYPES: dict[int, str] = {
+    0: "General",
+    1: "Gas chromatogram",
+    2: "Liquid chromatogram",
+    3: "FT-IR",
+    4: "NIR",
+    5: "UV-VIS",
+    6: "X-ray diffraction",
+    7: "Mass spectrum",
+    8: "NMR",
+    9: "Raman",
+    10: "Fluorescence",
+    11: "Atomic",
+    12: "Chromatogram (general)",
+    13: "Color",
+    14: "Simulated",
+}
+
+X_UNIT_LABELS: dict[int, str] = {
+    0: "Arbitrary",
+    1: "Wavenumber (cm^-1)",
+    2: "Wavelength (µm)",
+    3: "Wavelength (nm)",
+    4: "Time (s)",
+    5: "Time (min)",
+    6: "Frequency (Hz)",
+    7: "Frequency (kHz)",
+    8: "Frequency (MHz)",
+    9: "Mass (m/z)",
+    10: "Parts per million (ppm)",
+    11: "Time (days)",
+    12: "Time (years)",
+    13: "Raman Shift (cm^-1)",
+    14: "Energy (eV)",
+    15: "XYZ Text",
+    16: "Diode number",
+    17: "Channel",
+    18: "Angle (deg)",
+    19: "Temperature (F)",
+    20: "Temperature (C)",
+    21: "Temperature (K)",
+    22: "Data points",
+    23: "Time (ms)",
+    24: "Time (µs)",
+    25: "Time (ns)",
+    26: "Frequency (GHz)",
+    27: "Distance (cm)",
+    28: "Distance (m)",
+    29: "Distance (mm)",
+    30: "Time (hours)",
+    255: "No Units",
+}
+
+
+Y_UNIT_LABELS: dict[int, str] = {
+    0: "Arbitrary Intensity",
+    1: "Interferogram",
+    2: "Absorbance (AU)",
+    3: "Kubelka-Munk",
+    4: "Counts",
+    5: "Voltage (V)",
+    6: "Angle (deg)",
+    7: "Current (mA)",
+    8: "Distance (mm)",
+    9: "Voltage (mV)",
+    10: "log(1/R)",
+    11: "Percent (%)",
+    12: "Intensity",
+    13: "Relative Intensity",
+    14: "Energy",
+    16: "Decibel (dB)",
+    19: "Temperature (F)",
+    20: "Temperature (C)",
+    21: "Temperature (K)",
+    22: "Index of refraction",
+    23: "Extinction coeff.",
+    24: "Real",
+    25: "Imaginary",
+    26: "Complex",
+    128: "Transmittance",
+    129: "Reflectance",
+    130: "Valley",
+    255: "No units",
+}
+
 SPC_HEADER_SIZE = 512
 SPC_SUBHEADER_SIZE = 32
 
@@ -123,6 +209,36 @@ class SPCFile:
         """Filesystem path of the underlying SPC file."""
         return self._path
 
+    @staticmethod
+    def _map_code(code: object, labels: dict[int, str]) -> str:
+        code_int = int(code)
+        return labels.get(code_int, f"Unknown ({code_int})")
+
+    @property
+    def experiment(self) -> str:
+        """Human-readable experiment type."""
+        return self._map_code(self.header["experiment_type"], SPC_EXPERIMENT_TYPES)
+
+    @property
+    def x_unit(self) -> str:
+        """Human-readable X axis unit label."""
+        return self._map_code(self.header["x_unit_code"], X_UNIT_LABELS)
+
+    @property
+    def y_unit(self) -> str:
+        """Human-readable Y axis unit label."""
+        return self._map_code(self.header["y_unit_code"], Y_UNIT_LABELS)
+
+    @property
+    def z_unit(self) -> str:
+        """Human-readable Z axis unit label."""
+        return self._map_code(self.header["z_unit_code"], X_UNIT_LABELS)
+
+    @property
+    def w_unit(self) -> str:
+        """Human-readable W axis unit label."""
+        return self._map_code(self.header["w_unit_code"], X_UNIT_LABELS)
+
     @property
     def has_shared_x(self) -> bool:
         """True if all subfiles share a common X axis.
@@ -190,19 +306,18 @@ class SPCFile:
             parts.append("explicit-x")
         flags = "|".join(parts)
 
-        return (
-            f"<SPCFile path={self._path!r} n_subfiles={len(self)} "
-            f"n_points={self.header['n_points']} flags={flags}>"
-        )
+        return f"<SPCFile path={self._path!r} n_subfiles={len(self)} n_points={self.header['n_points']} flags={flags}>"
 
     def __str__(self) -> str:
         lines = [
             f"SPC File: {self._path}",
             f"Subfiles: {len(self)}",
             f"Points per subfile: {self.header['n_points']}",
-            f"Experiment type: {self.header['experiment_type']}",
-            f"X unit code: {self.header['x_unit_code']}",
-            f"Y unit code: {self.header['y_unit_code']}",
+            f"Experiment type: {self.experiment}",
+            f"X unit: {self.x_unit}",
+            f"Y unit: {self.y_unit}",
+            f"Z unit: {self.z_unit}",
+            f"W unit: {self.w_unit}",
         ]
         return "\n".join(lines)
 
