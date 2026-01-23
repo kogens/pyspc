@@ -170,7 +170,7 @@ class SPCSubfile:
     def __repr__(self) -> str:
         return f"<SPCSubfile n_points={len(self.x)} z={self.z}>"
 
-    def __getattr__(self, name):
+    def __getattr__(self, name) -> object:
         """Returns the attributes as keys from the subheader dictionary if it exists."""
         if self.subheader and name in self.subheader:
             return self.subheader[name]
@@ -232,6 +232,14 @@ class SPCFile:
     def flags(self) -> int:
         """Raw main-header flags bitfield (ftflgs)."""
         return int(self.header["flags"])
+    
+    @property
+    def z(self) -> np.ndarray:
+        """Z values for multifile SPC files."""
+        if not self.is_multifile or self.per_subfile_xy:
+            raise ValueError("Z-axis is only available for multifile SPC files with shared X axis")
+        z_vals = [subheader.get("z_value", 0.0) for subheader in self.subheaders]
+        return np.array(z_vals)
 
     @property
     def w_planes(self) -> int:
@@ -408,7 +416,7 @@ class SPCFile:
         """Get k-th spectrum as an SPCSubfile."""
         return self.subfiles[index]
 
-    def __getattr__(self, name: str) -> Iterable[SPCSubfile]:
+    def __getattr__(self, name: str) -> object:
         """Returns the attributes as keys from the header dictionary if it exists."""
         if name in self.header:
             return self.header[name]
@@ -430,11 +438,16 @@ class SPCFile:
         return f"<SPCFile path={self._path!r} n_subfiles={len(self)} n_points={self.header['n_points']} flags={flags}>"
 
     def __str__(self) -> str:
+        if self.has_shared_x:
+            pts = f"{self.header['n_points']}"
+        else:
+            pts = "Variable (per‑subfile X/Y)"
+
         lines = [
             f"SPC File: {self._path}",
             f"Date: {self.date}",
             f"Subfiles: {len(self)}",
-            f"Points per subfile: {self.header['n_points']}",
+            f"Points per subfile: {pts}",
             f"Experiment type: {self.experiment}",
             f"Units: X='{self.x_unit}', Y='{self.y_unit}', Z='{self.z_unit}', W='{self.w_unit}'",
         ]
