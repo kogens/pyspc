@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import datetime
 import struct
 from dataclasses import dataclass
-import datetime
 from pathlib import Path
 from typing import Iterable
 
@@ -15,14 +15,14 @@ SPC_HEADER_SIZE = 512
 SPC_SUBHEADER_SIZE = 32
 
 # Main header flag bits (ftflgs)
-FLAG_Y_16BIT = 0x01  # Y data is 16-bit if set, 32-bit if clear
-FLAG_CHROMATOGRAM = 0x02  # Enables chromatogram / fexper interpretation
-FLAG_IS_MULTIFILE = 0x04  # Multifile; more than one subfile present
-FLAG_RANDOM_Z = 0x08  # Multifile with arbitrary (unordered) Z values
-FLAG_ORDERED_Z = 0x10  # Multifile with ordered but uneven Z values
-FLAG_CUSTOM_AXIS_LABELS = 0x20  # Use fcatxt axis labels instead of type defaults
-FLAG_PER_SUBFILE_XY = 0x40  # Per-subfile X arrays and lengths (TXYXYS mode)
-FLAG_EXPLICIT_X = 0x80  # X values stored explicitly as float array(s)
+FLAG_Y_16BIT = 0x01  # Y data stored as 16‑bit integers if set, 32‑bit if clear (TSPREC)
+FLAG_CHROMATOGRAM = 0x02  # Chromatogram / special fexper interpretation (TCGRAM)
+FLAG_IS_MULTIFILE = 0x04  # File contains multiple subfiles/spectra (TMULTI)
+FLAG_RANDOM_Z = 0x08  # Multifile with arbitrary, unordered Z values (TRANDM)
+FLAG_ORDERED_Z = 0x10  # Multifile with ordered but unevenly spaced Z values (TORDRD)
+FLAG_CUSTOM_AXIS_LABELS = 0x20  # Use custom axis label text from header instead of defaults (TALABS)
+FLAG_PER_SUBFILE_XY = 0x40  # Each subfile has its own X grid and length (XYXY / TXYXYS)
+FLAG_EXPLICIT_X = 0x80  # A shared X axis is stored explicitly as float array(s) (TXVALS)
 
 
 SPC_EXPERIMENT_TYPES: dict[int, str] = {
@@ -196,11 +196,18 @@ class SPCFile:
             if int(self.header.get("w_planes", 0)) < 0:
                 raise ValueError(f"Invalid w_planes: {self.header.get('w_planes')}")
 
-            # Read X axis
-            self._x = self._read_x_axis(f)
+            if self.per_subfile_xy:
+                # XYXY mode: each subfile has its own X grid and point count
+                self.subfiles, self.subheaders = self._read_all_subfiles_xyxys(f)
+                self._x = np.array([], dtype=np.float64)
+                self._y = np.array([], dtype=np.float64)
+            else:
+                # Read X axis
+                self._x = self._read_x_axis(f)
 
-            # Read all Y data and subheaders
-            self._y, self.subheaders = self._read_all_subfiles(f)
+                # Read all Y data and subheaders
+                self._y, self.subheaders = self._read_all_subfiles(f)
+                self.subfiles = self._build_subfiles_shared_x(self._x, self._y, self.subheaders)
 
             # Read log block
             self.log = self._read_log_block(f)
@@ -238,7 +245,7 @@ class SPCFile:
 
         if w_inc != 0.0:
             w0 = self.subheaders[0].get("w_value", 0.0)
-            return (w0 + np.arange(w_planes) * w_inc)
+            return w0 + np.arange(w_planes) * w_inc
 
         w_vals = [self.subheaders[i * z_per_plane].get("w_value", 0.0) for i in range(w_planes)]
         return np.array(w_vals)
@@ -298,7 +305,7 @@ class SPCFile:
     def has_shared_x(self) -> bool:
         """True if all subfiles share a common X axis.
 
-        False for TXYXYS files where each subfile has its own X array.
+        False for XYXY (TXYXYS) files where each subfile has its own X array.
         """
         return not self.per_subfile_xy
 
@@ -334,12 +341,12 @@ class SPCFile:
 
     @property
     def per_subfile_xy(self) -> bool:
-        """True if each subfile has its own X array/length (TXYXYS)."""
+        """True if each subfile has its own X grid and length (XYXY / TXYXYS)."""
         return bool(self.flags & FLAG_PER_SUBFILE_XY)
 
     @property
     def explicit_x(self) -> bool:
-        """True if X values are stored explicitly as float array(s) (TXVALS)."""
+        """True if a shared X axis is stored explicitly as float array(s) (TXVALS)."""
         return bool(self.flags & FLAG_EXPLICIT_X)
 
     @property
@@ -350,12 +357,12 @@ class SPCFile:
             1D array of X coordinates shared across all subfiles.
 
         Raises:
-            ValueError: For TXYXYS files with per-subfile X arrays.
-                        Use spc[i].x to access individual X arrays.
+            ValueError: For XYXY (TXYXYS) files with per-subfile X arrays.
+                        Use spc[i].x to access the X grid for each spectrum.
         """
         if not self.has_shared_x:
             raise ValueError(
-                "This SPC file has per-subfile X arrays (TXYXYS mode). Use spc[i].x to access X for each spectrum."
+                "This SPC file uses per-subfile X arrays (XYXY / TXYXYS). Use spc[i].x to access X for each spectrum."
             )
         return self._x
 
@@ -368,24 +375,22 @@ class SPCFile:
             2D array [n_points, n_subfiles] for multifile.
 
         Raises:
-            ValueError: For TXYXYS files with varying lengths.
+            ValueError: For XYXY (TXYXYS) files with varying lengths.
                         Use spc[i].y to access individual Y arrays.
         """
         if not self.has_shared_x:
             raise ValueError(
-                "This SPC file has per-subfile XY arrays (TXYXYS mode). Use spc[i].y to access Y for each spectrum."
+                "This SPC file uses per-subfile XY arrays (XYXY / TXYXYS). Use spc[i].y to access Y for each spectrum."
             )
         return self._y
 
     def __len__(self) -> int:
         """Number of subfiles (spectra) in the file."""
-        return len(self.subheaders)
+        return len(self.subfiles)
 
     def __getitem__(self, index: int) -> SPCSubfile:
         """Get k-th spectrum as an SPCSubfile."""
-        y_data = self._y[:, index] if self._y.ndim == 2 else self._y
-        z_value = self.subheaders[index].get("z_value")
-        return SPCSubfile(x=self._x, y=y_data, z=z_value, subheader=self.subheaders[index])
+        return self.subfiles[index]
 
     def __iter__(self) -> Iterable[SPCSubfile]:
         """Iterate over all subfiles."""
@@ -496,6 +501,50 @@ class SPCFile:
             y_array = np.column_stack(y_data_list)  # 2D [n_points, n_subfiles]
 
         return y_array, subheaders
+
+    @staticmethod
+    def _build_subfiles_shared_x(x: np.ndarray, y: np.ndarray, subheaders: list[dict[str, object]]) -> list[SPCSubfile]:
+        """Build SPCSubfile instances for shared-X files."""
+        if y.ndim == 1:
+            # Single subfile
+            return [SPCSubfile(x=x, y=y, z=subheaders[0].get("z_value"), subheader=subheaders[0])]
+
+        subfiles: list[SPCSubfile] = []
+        for i, subheader in enumerate(subheaders):
+            # Multiple subfiles, extract column i from Y array
+            subfiles.append(SPCSubfile(x=x, y=y[:, i], z=subheader.get("z_value"), subheader=subheader))
+        return subfiles
+
+    def _read_all_subfiles_xyxys(self, f) -> tuple[list[SPCSubfile], list[dict[str, object]]]:
+        """Read XYXY (TXYXYS) files where each subfile has its own X array and length."""
+        if not self.explicit_x:
+            raise ValueError("XYXY (TXYXYS) files require explicit X values (TXVALS flag)")
+
+        flags = self.header["flags"]
+        n_subfiles = self.header["n_subfiles"]
+        is_16bit_y = flags & FLAG_Y_16BIT
+
+        f.seek(SPC_HEADER_SIZE)
+
+        subheaders: list[dict[str, object]] = []
+        subfiles: list[SPCSubfile] = []
+
+        for _ in range(n_subfiles):
+            subheader = self._read_subheader(f)
+            subheaders.append(subheader)
+
+            n_points = int(subheader["n_points"])
+            x = np.frombuffer(f.read(n_points * 4), dtype="<f4").astype(np.float64)
+
+            if flags & FLAG_IS_MULTIFILE:
+                y_exponent = int(subheader["exponent"])
+            else:
+                y_exponent = int(self.header["exponent"])
+
+            y = self._read_y_data(f, n_points, y_exponent, is_16bit_y)
+            subfiles.append(SPCSubfile(x=x, y=y, z=subheader.get("z_value"), subheader=subheader))
+
+        return subfiles, subheaders
 
     def _read_subheader(self, f) -> dict[str, object]:
         """Read and parse a 32-byte subheader."""

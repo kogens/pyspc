@@ -118,6 +118,34 @@ class TestXModeBehavior:
         assert not np.allclose(spc.x, expected, rtol=1e-6, atol=0.0)
 
 
+class TestPerSubfileXYMode:
+    """Test TXYXYS files where each subfile has its own X/Y arrays."""
+
+    def test_m_xyxy_contract(self, data_dir: Path) -> None:
+        spc = SPCFile(data_dir / "m_xyxy.spc")
+        assert spc.has_shared_x is False
+        assert spc.per_subfile_xy is True
+        assert spc.explicit_x is True
+
+        with pytest.raises(ValueError):
+            _ = spc.x
+        with pytest.raises(ValueError):
+            _ = spc.y
+
+        assert len(spc) == int(spc.header["n_subfiles"])
+
+        sub0 = spc[0]
+        assert isinstance(sub0, SPCSubfile)
+        assert sub0.x.dtype == np.float64
+        assert sub0.y.dtype == np.float64
+        assert sub0.x.ndim == 1
+        assert sub0.y.ndim == 1
+        assert sub0.x.shape == sub0.y.shape
+        assert sub0.x.shape[0] == int(sub0.subheader["n_points"])
+        assert np.all(np.isfinite(sub0.x))
+        assert np.all(np.isfinite(sub0.y))
+
+
 class TestSPCFileIndexing:
     """Test indexing and iteration over subfiles."""
 
