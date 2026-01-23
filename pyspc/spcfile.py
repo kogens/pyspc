@@ -188,15 +188,17 @@ class SPCFile:
             raise FileNotFoundError(self._path)
 
         with self._path.open("rb") as f:
-            self.header = self._read_header(f)
+            header_buf = self._read_header_bytes(f)
 
-            version = int(self.header["version"])
+            version = int(header_buf[1])
             if version == 0x4B:
                 self._struct_prefix = "<"  # little-endian new format
             elif version == 0x4C:
                 self._struct_prefix = ">"  # big-endian new format
             else:
                 raise ValueError(f"Unsupported SPC version: {version:02X}")
+
+            self.header = self._parse_header(header_buf, self._struct_prefix)
 
             if int(self.header.get("w_planes", 0)) < 0:
                 raise ValueError(f"Invalid w_planes: {self.header.get('w_planes')}")
@@ -423,10 +425,22 @@ class SPCFile:
         ]
         return "\n".join(lines)
 
-    def _read_header(self, f) -> dict[str, object]:
-        """Read and parse the 512-byte main header."""
+    def _read_header_bytes(self, f) -> bytes:
+        """Read the raw 512-byte main header bytes."""
         f.seek(0)
         buffer = f.read(SPC_HEADER_SIZE)
+        if len(buffer) < SPC_HEADER_SIZE:
+            raise ValueError(f"File too small: got {len(buffer)} bytes, expected {SPC_HEADER_SIZE}")
+        return buffer
+
+    @staticmethod
+    def _parse_header(buffer: bytes, struct_prefix: str) -> dict[str, object]:
+        """Parse the 512-byte main header.
+
+        Args:
+            buffer: Raw 512-byte SPCHDR.
+            struct_prefix: '<' for little-endian (0x4B) or '>' for big-endian (0x4C).
+        """
         if len(buffer) < SPC_HEADER_SIZE:
             raise ValueError(f"File too small: got {len(buffer)} bytes, expected {SPC_HEADER_SIZE}")
 
@@ -435,13 +449,9 @@ class SPCFile:
 
         for field_name, fmt in SPC_HEADER_FIELDS:
             size = struct.calcsize(fmt)
-            # Use little-endian by default when first parsing; the version
-            # byte itself is endian-independent and will be reinterpreted
-            # in __init__ to choose the final struct prefix.
-            values = struct.unpack_from("<" + fmt, buffer, offset)
+            values = struct.unpack_from(struct_prefix + fmt, buffer, offset)
             value = values[0] if len(values) == 1 else values
 
-            # Decode byte strings
             if isinstance(value, bytes):
                 value = value.split(b"\x00")[0].decode("latin-1", errors="replace").strip()
 
