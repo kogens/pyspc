@@ -190,8 +190,13 @@ class SPCFile:
         with self._path.open("rb") as f:
             self.header = self._read_header(f)
 
-            if self.header["version"] != 0x4B:
-                raise ValueError(f"Unsupported SPC version: {self.header['version']:02X}")
+            version = int(self.header["version"])
+            if version == 0x4B:
+                self._struct_prefix = "<"  # little-endian new format
+            elif version == 0x4C:
+                self._struct_prefix = ">"  # big-endian new format
+            else:
+                raise ValueError(f"Unsupported SPC version: {version:02X}")
 
             if int(self.header.get("w_planes", 0)) < 0:
                 raise ValueError(f"Invalid w_planes: {self.header.get('w_planes')}")
@@ -430,7 +435,10 @@ class SPCFile:
 
         for field_name, fmt in SPC_HEADER_FIELDS:
             size = struct.calcsize(fmt)
-            values = struct.unpack_from(fmt, buffer, offset)
+            # Use little-endian by default when first parsing; the version
+            # byte itself is endian-independent and will be reinterpreted
+            # in __init__ to choose the final struct prefix.
+            values = struct.unpack_from("<" + fmt, buffer, offset)
             value = values[0] if len(values) == 1 else values
 
             # Decode byte strings
@@ -452,7 +460,8 @@ class SPCFile:
 
         if flags & FLAG_EXPLICIT_X and not (flags & FLAG_PER_SUBFILE_XY):
             # Explicit global X array, this is stored directly after main header
-            x_data = np.frombuffer(f.read(n_points * 4), dtype="<f4").astype(np.float64)
+            dt = "<f4" if self._struct_prefix == "<" else ">f4"
+            x_data = np.frombuffer(f.read(n_points * 4), dtype=dt).astype(np.float64)
         else:
             # Evenly spaced X defined from first_x and last_x in header
             x_data = np.linspace(self.header["first_x"], self.header["last_x"], n_points)
@@ -534,7 +543,8 @@ class SPCFile:
             subheaders.append(subheader)
 
             n_points = int(subheader["n_points"])
-            x = np.frombuffer(f.read(n_points * 4), dtype="<f4").astype(np.float64)
+            dt_x = "<f4" if self._struct_prefix == "<" else ">f4"
+            x = np.frombuffer(f.read(n_points * 4), dtype=dt_x).astype(np.float64)
 
             if flags & FLAG_IS_MULTIFILE:
                 y_exponent = int(subheader["exponent"])
@@ -557,7 +567,7 @@ class SPCFile:
 
         for field_name, fmt in SPC_SUBHEADER_FIELDS:
             size = struct.calcsize(fmt)
-            values = struct.unpack_from(fmt, buffer, offset)
+            values = struct.unpack_from(self._struct_prefix + fmt, buffer, offset)
             value = values[0] if len(values) == 1 else values
             if isinstance(value, bytes):
                 value = value.decode("latin-1", errors="replace").strip()
@@ -570,16 +580,19 @@ class SPCFile:
         """Read and decode Y values for one subfile."""
         # Read raw data
         if is_16bit:
-            y_raw = np.frombuffer(f.read(n_points * 2), dtype="<i2")
+            dt = "<i2" if self._struct_prefix == "<" else ">i2"
+            y_raw = np.frombuffer(f.read(n_points * 2), dtype=dt)
         else:
-            y_raw = np.frombuffer(f.read(n_points * 4), dtype="<i4")
+            dt = "<i4" if self._struct_prefix == "<" else ">i4"
+            y_raw = np.frombuffer(f.read(n_points * 4), dtype=dt)
 
         # Decode to float
         if exponent == -128:  # 0x80 = floating point
             if is_16bit:
                 # Check for invalid combination
                 raise ValueError("Cannot have 16-bit Y with float exponent")
-            y_data = y_raw.view("<f4").astype(np.float64)
+            ft = "<f4" if self._struct_prefix == "<" else ">f4"
+            y_data = y_raw.view(ft).astype(np.float64)
         else:
             # Fixed-point conversion
             bit_width = 16 if is_16bit else 32
@@ -601,7 +614,8 @@ class SPCFile:
             return None
 
         # Parse LOGSTC structure (5 integers)
-        logsize, _, txt_offset, binary_size, logdsks = struct.unpack("<IIIII", logstc_buffer[:20])
+        fmt = self._struct_prefix + "IIIII"
+        logsize, _, txt_offset, binary_size, logdsks = struct.unpack(fmt, logstc_buffer[:20])
         # Remaining 44 bytes are reserved/spare
 
         # Read remaining log block data (we already read first 64 bytes)
