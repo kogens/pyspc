@@ -167,6 +167,15 @@ class SPCSubfile:
     z: float | None = None
     subheader: dict[str, object] | None = None
 
+    def __repr__(self) -> str:
+        return f"<SPCSubfile n_points={len(self.x)} z={self.z}>"
+
+    def __getattr__(self, name):
+        """Returns the attributes as keys from the subheader dictionary if it exists."""
+        if self.subheader and name in self.subheader:
+            return self.subheader[name]
+        raise AttributeError(f"'SPCSubfile' object has no attribute '{name}'")
+
 
 class SPCFile:
     """In-memory representation of a GRAMS SPC file.
@@ -398,6 +407,12 @@ class SPCFile:
     def __getitem__(self, index: int) -> SPCSubfile:
         """Get k-th spectrum as an SPCSubfile."""
         return self.subfiles[index]
+
+    def __getattr__(self, name: str) -> Iterable[SPCSubfile]:
+        """Returns the attributes as keys from the header dictionary if it exists."""
+        if name in self.header:
+            return self.header[name]
+        raise AttributeError(f"'SPCFile' object has no attribute '{name}'")
 
     def __iter__(self) -> Iterable[SPCSubfile]:
         """Iterate over all subfiles."""
