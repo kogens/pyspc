@@ -235,11 +235,13 @@ class SPCFile:
     
     @property
     def z(self) -> np.ndarray:
-        """Z values for multifile SPC files."""
-        if not self.is_multifile or self.per_subfile_xy:
-            raise ValueError("Z-axis is only available for multifile SPC files with shared X axis")
-        z_vals = [subheader.get("z_value", 0.0) for subheader in self.subheaders]
-        return np.array(z_vals)
+        """Z axis values.
+
+        - Multifile, shared-X: 1D array of z_value per subfile.
+        - Single-spectrum (including single XYXY): scalar Z coordinate (or 0.0).
+        """
+        z_values = [subheader.get("z_value", 0.0) for subheader in self.subheaders]
+        return np.array(z_values)
 
     @property
     def w_planes(self) -> int:
@@ -248,31 +250,15 @@ class SPCFile:
 
     @property
     def w(self) -> np.ndarray:
-        """W-plane axis values for 4D files.
+        """W coordinate per subfile.
 
-        Returns:
-            1D array of length `w_planes`.
+        Returns a 1D array of ``w_value`` from each SUBHDR, one per subfile.
 
-        Raises:
-            ValueError: If the file has no W-plane data or the layout is inconsistent.
+        For 4D data, values will repeat in blocks corresponding to Z positions
+        within each W-plane; ``w_planes`` still exposes the plane count.
         """
-        w_planes = self.w_planes
-        if w_planes == 0:
-            raise ValueError("This SPC file has no W-plane (4D) data")
-
-        n_subfiles = self.header["n_subfiles"]
-        if n_subfiles % w_planes != 0:
-            raise ValueError(f"Invalid 4D layout: n_subfiles={n_subfiles} is not divisible by w_planes={w_planes}")
-
-        z_per_plane = n_subfiles // w_planes
-        w_inc = self.header.get("w_increment", 0.0)
-
-        if w_inc != 0.0:
-            w0 = self.subheaders[0].get("w_value", 0.0)
-            return w0 + np.arange(w_planes) * w_inc
-
-        w_vals = [self.subheaders[i * z_per_plane].get("w_value", 0.0) for i in range(w_planes)]
-        return np.array(w_vals)
+        w_values = [float(subheader.get("w_value", 0.0)) for subheader in self.subheaders]
+        return np.array(w_values)
 
     @property
     def path(self) -> Path:

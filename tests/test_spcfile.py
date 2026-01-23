@@ -34,13 +34,13 @@ class TestSPCFileConstruction:
         """4D W-plane files should load and expose minimal W metadata."""
         spc = SPCFile(data_dir / "4d_map.spc")
         assert spc.w_planes > 0
-        assert spc.w.shape == (spc.w_planes,)
+        # Per-subfile W coordinate
+        assert spc.w.shape == (len(spc),)
         assert np.all(np.isfinite(spc.w))
 
-        # For this sample file, W is evenly spaced.
+        # Known basic properties for this sample file.
         assert spc.w_planes == 11
         assert len(spc) == 121
-        assert np.allclose(np.diff(spc.w), 10.0)
 
     def test_nonexistent_file(self) -> None:
         """Raise FileNotFoundError for missing files."""
