@@ -498,7 +498,13 @@ class SPCFile:
         if flags & FLAG_EXPLICIT_X and not (flags & FLAG_PER_SUBFILE_XY):
             # Explicit global X array, this is stored directly after main header
             dt = "<f4" if self._struct_prefix == "<" else ">f4"
-            x_data = np.frombuffer(f.read(n_points * 4), dtype=dt).astype(np.float64)
+            byte_count = int(n_points) * 4
+            buf = f.read(byte_count)
+            if len(buf) != byte_count:
+                raise ValueError(
+                    f"Could not read explicit global X axis: expected {byte_count} bytes, got {len(buf)}"
+                )
+            x_data = np.frombuffer(buf, dtype=dt).astype(np.float64)
         else:
             # Evenly spaced X defined from first_x and last_x in header
             x_data = np.linspace(self.header["first_x"], self.header["last_x"], n_points)
@@ -618,10 +624,22 @@ class SPCFile:
         # Read raw data
         if is_16bit:
             dt = "<i2" if self._struct_prefix == "<" else ">i2"
-            y_raw = np.frombuffer(f.read(n_points * 2), dtype=dt)
+            byte_count = int(n_points) * 2
+            buf = f.read(byte_count)
+            if len(buf) != byte_count:
+                raise ValueError(
+                    f"File ended while reading Y data: expected {byte_count} bytes, got {len(buf)}"
+                )
+            y_raw = np.frombuffer(buf, dtype=dt)
         else:
             dt = "<i4" if self._struct_prefix == "<" else ">i4"
-            y_raw = np.frombuffer(f.read(n_points * 4), dtype=dt)
+            byte_count = int(n_points) * 4
+            buf = f.read(byte_count)
+            if len(buf) != byte_count:
+                raise ValueError(
+                    f"File ended while reading Y data: expected {byte_count} bytes, got {len(buf)}"
+                )
+            y_raw = np.frombuffer(buf, dtype=dt)
 
         # Decode to float
         if exponent == -128:  # 0x80 = floating point

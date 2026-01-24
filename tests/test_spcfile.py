@@ -4,8 +4,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyspc import SPCFile, SPCSubfile
-from pyspc.spcfile import FLAG_EXPLICIT_X
+from spcpy import SPCFile, SPCSubfile
+from spcpy.spcfile import FLAG_EXPLICIT_X
 
 
 @pytest.fixture(scope="session")
