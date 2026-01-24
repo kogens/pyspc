@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "spcpy"
+name = "spcfile"
 version = "0.1.0"
 description = "GRAMS SPC file reader for Python"
 readme = "README.md"
@@ -14,7 +14,7 @@ dependencies = ["numpy"]
 test = ["pytest"]
 
 [tool.setuptools]
-packages = ["spcpy"]
+packages = ["spcfile"]
 
 [tool.ruff]
 line-length = 120

@@ -1,9 +1,9 @@
-# SPCpy - An SPC file reader in Python
+# SPCfile - An SPC file reader in Python
 A modern reader for GRAMS/Thermo-Galactic [SPC files](https://en.wikipedia.org/wiki/SPC_file_format) - a widely used file format in spectroscopy.
 
 
 ## Features
-SPCpy focuses on a small, practical API for loading SPC files into NumPy arrays. It aims to make common spectroscopy workflows easy (load → inspect metadata → work with `x`/`y` arrays), while keeping the implementation straightforward and well-tested.
+SPCfile focuses on a small, practical API for loading SPC files into NumPy arrays. It aims to make common spectroscopy workflows easy (load → inspect metadata → work with `x`/`y` arrays), while keeping the implementation straightforward and well-tested.
 
 
 ## Supported SPC formats
@@ -16,7 +16,7 @@ Currently supported:
 
 ## Usage examples
 ```python
-from spcpy import SPCFile
+from spcfile import SPCFile
 
 # Load multifile with a shared X axis
 spc = SPCFile("multifile.spc")
@@ -47,5 +47,5 @@ y0 = subfile0.y
 
 
 ## Limitations
-SPCpy currently rejects old-format `0x4D` SPC files. For `TXYXYS` files, SSFSTC directory-based random access is not implemented yet.
+SPCfile currently rejects old-format `0x4D` SPC files.
 

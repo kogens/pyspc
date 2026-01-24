@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from spcpy import SPCFile
+from spcfile import SPCFile
 
 
 @pytest.fixture(scope="session")
