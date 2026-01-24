@@ -1,6 +1,13 @@
 # SPCfile - An SPC file reader in Python
 A modern reader for GRAMS/Thermo-Galactic [SPC files](https://en.wikipedia.org/wiki/SPC_file_format) - a widely used file format in spectroscopy.
 
+## Installation
+Requires Python >= 3.9 and NumPy. Install directly from this repository using `pip`:
+
+```bash
+pip install git+https://github.com/kogens/spcfile.git
+```
+
 
 ## Features
 SPCfile focuses on a small, practical API for loading SPC files into NumPy arrays. It aims to make common spectroscopy workflows easy (load → inspect metadata → work with `x`/`y` arrays), while keeping the implementation straightforward and well-tested.
