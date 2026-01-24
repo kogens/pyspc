@@ -14,38 +14,37 @@ Currently supported:
 - Multifile (`TMULTI`) and minimal 4D metadata: `.z` / `.w` expose per-subfile coordinates and `.w_planes` exposes the plane count
 - Log text block is read when present
 
-## Usage
+## Usage examples
 ```python
 from spcpy import SPCFile
 
-# Load a file
-spc = SPCFile("path/to/your/file.spc")
-
-# Single-spectrum (or single-subfile XYXY): x and y are 1D
-x = spc.x
-y = spc.y
-
-# Multifile with shared X: y is (n_points, n_subfiles)
-if spc.is_multifile and spc.has_shared_x:
-    y0 = spc.y[:, 0]
-
-# Iterate subfiles (always works)
-for sub in spc:
-    print(sub.z, sub.x.shape, sub.y.shape)
-
-# Per-subfile XYXY (TXYXYS) multifiles: access per-spectrum arrays
-if spc.per_subfile_xy and spc.is_multifile:
-    x0 = spc[0].x
-    y0 = spc[0].y
+# Load multifile with a shared X axis
+spc = SPCFile("multifile.spc")
+print(spc)
 ```
 
-Log text (if present):
+```
+SPC File: multifile.spc
+Date: 2021-03-15 09:21:00
+Subfiles: 1
+Points per subfile: 1776
+Experiment type: General
+Units: X='Wavenumber (cm^-1)', Y='Transmittance', Z='Arbitrary', W='Arbitrary'
+```
+
+Datapoints and coordinates are easily accessible as attributes of the `SPCFile` object:
 
 ```python
-spc = SPCFile("path/to/ftir.spc")
-if spc.log:
-    print(spc.log.splitlines()[0])
+# Access X, Y, Z values (represented as numpy arrays)
+x = spc.x
+y = spc.y
+z = spc.z
+
+# Subfiles can be indexed like a list
+subfile0 = spc[0]
+y0 = subfile0.y
 ```
+
 
 ## Limitations
 SPCpy currently rejects old-format `0x4D` SPC files. For `TXYXYS` files, SSFSTC directory-based random access is not implemented yet.
