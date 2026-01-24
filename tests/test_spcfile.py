@@ -145,6 +145,19 @@ class TestPerSubfileXYMode:
         assert np.all(np.isfinite(sub0.x))
         assert np.all(np.isfinite(sub0.y))
 
+    def test_single_subfile_xyxy_allows_x_y_access(self, data_dir: Path) -> None:
+        """Single-subfile files with TXYXYS set should still allow spc.x/spc.y for convenience."""
+        spc = SPCFile(data_dir / "ms.spc")
+        assert len(spc) == 1
+        assert spc.per_subfile_xy is True
+
+        assert spc.x.ndim == 1
+        assert spc.y.ndim == 1
+        assert spc.x.shape == spc[0].x.shape
+        assert spc.y.shape == spc[0].y.shape
+        assert np.array_equal(spc.x, spc[0].x)
+        assert np.array_equal(spc.y, spc[0].y)
+
 
 class TestSPCFileIndexing:
     """Test indexing and iteration over subfiles."""

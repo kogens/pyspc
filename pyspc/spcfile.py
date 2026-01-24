@@ -215,8 +215,15 @@ class SPCFile:
             if self.per_subfile_xy:
                 # XYXY mode: each subfile has its own X grid and point count
                 self.subfiles, self.subheaders = self._read_all_subfiles_xyxys(f)
-                self._x = np.array([], dtype=np.float64)
-                self._y = np.array([], dtype=np.float64)
+
+                # If there is only one subfile, expose its X/Y directly via .x/.y
+                # for convenience (even though TXYXYS is set).
+                if not self.is_multifile:
+                    self._x = self.subfiles[0].x
+                    self._y = self.subfiles[0].y
+                else:
+                    self._x = np.array([], dtype=np.float64)
+                    self._y = np.array([], dtype=np.float64)
             else:
                 # Read X axis
                 self._x = self._read_x_axis(f)
@@ -232,7 +239,7 @@ class SPCFile:
     def flags(self) -> int:
         """Raw main-header flags bitfield (ftflgs)."""
         return int(self.header["flags"])
-    
+
     @property
     def z(self) -> np.ndarray:
         """Z axis values.
@@ -317,7 +324,7 @@ class SPCFile:
 
         False for XYXY (TXYXYS) files where each subfile has its own X array.
         """
-        return not self.per_subfile_xy
+        return (not self.per_subfile_xy) or (not self.is_multifile)
 
     @property
     def y_16bit(self) -> bool:
@@ -370,7 +377,10 @@ class SPCFile:
             ValueError: For XYXY (TXYXYS) files with per-subfile X arrays.
                         Use spc[i].x to access the X grid for each spectrum.
         """
-        if not self.has_shared_x:
+        if not self.is_multifile:
+            return self.subfiles[0].x
+
+        if self.is_multifile and not self.has_shared_x:
             raise ValueError(
                 "This SPC file uses per-subfile X arrays (XYXY / TXYXYS). Use spc[i].x to access X for each spectrum."
             )
@@ -388,6 +398,9 @@ class SPCFile:
             ValueError: For XYXY (TXYXYS) files with varying lengths.
                         Use spc[i].y to access individual Y arrays.
         """
+        if not self.is_multifile:
+            return self.subfiles[0].y
+
         if not self.has_shared_x:
             raise ValueError(
                 "This SPC file uses per-subfile XY arrays (XYXY / TXYXYS). Use spc[i].y to access Y for each spectrum."
