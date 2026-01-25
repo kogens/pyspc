@@ -1,20 +1,48 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "spcfile"
-version = "0.1.0"
+dynamic = ["version"]
 description = "GRAMS SPC file reader for Python"
 readme = "README.md"
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+]
 requires-python = ">=3.9"
 dependencies = ["numpy"]
+keywords = ["spc", "spectroscopy", "GRAMS", "file-format"]
+authors = [
+    { name = "Nikolaj Langemark", email = "nikolaj@longcreek.me" },
+]
 
 [project.optional-dependencies]
 test = ["pytest"]
+dev = [
+    "build",
+    "ruff",
+    "twine",
+    "pytest",
+]
+
+[project.urls]
+homepage = "https://github.com/kogens/spcfile"
+repository = "https://github.com/kogens/spcfile"
 
 [tool.hatch.build.targets.wheel]
 packages = ["spcfile"]
+
+[tool.hatch.version]
+source = "vcs"
 
 [tool.ruff]
 line-length = 120
