@@ -38,10 +38,6 @@ dev = [
 homepage = "https://github.com/kogens/spcfile"
 repository = "https://github.com/kogens/spcfile"
 
-[project.urls]
-homepage = "https://github.com/kogens/spcfile"
-repository = "https://github.com/kogens/spcfile"
-
 [tool.hatch.build.targets.wheel]
 packages = ["spcfile"]
 
