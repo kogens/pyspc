@@ -6,11 +6,13 @@ import pytest
 
 from spcfile import SPCFile, SPCSubfile
 from spcfile.spcfile import FLAG_EXPLICIT_X
+from tests.fixtures_synthetic import choose_data_dir
 
 
 @pytest.fixture(scope="session")
-def data_dir() -> Path:
-    return Path(__file__).parent / "data"
+def data_dir(tmp_path_factory) -> Path:
+    real = Path(__file__).parent / "data"
+    return choose_data_dir(tmp_path_factory=tmp_path_factory, real_data_dir=real)
 
 
 class TestSPCFileConstruction:
