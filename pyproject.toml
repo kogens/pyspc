@@ -27,6 +27,12 @@ authors = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+dev = [
+    "build",
+    "ruff",
+    "twine",
+    "pytest",
+]
 
 [project.urls]
 homepage = "https://github.com/kogens/spcfile"
